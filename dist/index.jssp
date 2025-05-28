@@ -1,0 +1,95 @@
+metadata = {
+  systemName: "com.demo.sendgrid.email",
+  displayName: "SendGrid Email Broker (HTTP)",
+  description: "Sends emails using the SendGrid Web API directly.",
+  configuration: {
+    apiKey: {
+      displayName: "SendGrid API Key",
+      type: "string",
+      required: !0
+    }
+  }
+};
+ondescribe = async function() {
+  postSchema({
+    objects: {
+      email: {
+        displayName: "Email",
+        description: "An email message to send via SendGrid.",
+        properties: {
+          to: { displayName: "To", type: "string" },
+          from: { displayName: "From", type: "string" },
+          subject: { displayName: "Subject", type: "string" },
+          text: { displayName: "Text Body", type: "string" },
+          html: { displayName: "HTML Body", type: "string" },
+          status: { displayName: "Status", type: "string" }
+        },
+        methods: {
+          send: {
+            displayName: "Send Email",
+            type: "create",
+            inputs: ["to", "from", "subject", "text", "html"],
+            outputs: ["status"]
+          }
+        }
+      }
+    }
+  });
+};
+onexecute = async function({
+  objectName: e,
+  methodName: s,
+  properties: a,
+  parameters: n,
+  configuration: i
+}) {
+  switch (e) {
+    case "email":
+      await d(s, a, i);
+      break;
+    default:
+      throw new Error("Object '" + e + "' not supported.");
+  }
+};
+async function d(e, s, a) {
+  switch (e) {
+    case "send":
+      await u(s, a);
+      break;
+    default:
+      throw new Error("Method '" + e + "' is not supported.");
+  }
+}
+async function u(e, s) {
+  return new Promise((a, n) => {
+    const i = "https://api.sendgrid.com/v3/mail/send", t = new XMLHttpRequest();
+    t.open("POST", i), t.setRequestHeader("Authorization", "Bearer " + String(s.apiKey)), t.setRequestHeader("Content-Type", "application/json");
+    const r = {
+      personalizations: [
+        {
+          to: [{ email: e.to }],
+          subject: e.subject
+        }
+      ],
+      from: { email: e.from },
+      content: [
+        { type: "text/plain", value: e.text || "" }
+      ]
+    };
+    e.html && r.content.push({ type: "text/html", value: e.html }), t.onreadystatechange = function() {
+      if (t.readyState === 4)
+        try {
+          t.status >= 200 && t.status < 300 ? (postResult({
+            status: String(t.status)
+          }), a()) : n(
+            new Error(
+              "SendGrid send failed: " + t.status + " - " + t.responseText
+            )
+          );
+        } catch (o) {
+          n(o);
+        }
+    }, t.send(JSON.stringify(r));
+  });
+}
+//# sourceMappingURL=index.js.map
