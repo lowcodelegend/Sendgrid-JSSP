@@ -1,138 +1,113 @@
 import "@k2oss/k2-broker-core";
+import sgMail from "@sendgrid/mail";
+
+/**
+ * SendGrid Email Broker - Sends emails via SendGrid.
+ */
 
 metadata = {
-  systemName: "com.k2.example",
-  displayName: "Example Broker",
-  description: "An example broker that accesses JSONPlaceholder.",
+  systemName: "com.demo.sendgrid.email",
+  displayName: "SendGrid Email Broker",
+  description: "Sends emails using the official SendGrid npm package.",
+  configuration: {
+    apiKey: {
+      displayName: "SendGrid API Key",
+      type: "string",
+      required: true
+    }
+  }
 };
 
-ondescribe = async function ({ configuration }): Promise<void> {
+ondescribe = async function () {
   postSchema({
     objects: {
-      todo: {
-        displayName: "TODO",
-        description: "Manages a TODO list",
+      email: {
+        displayName: "Email",
+        description: "An email message to send via SendGrid.",
         properties: {
-          id: {
-            displayName: "ID",
-            type: "number",
-          },
-          userId: {
-            displayName: "User ID",
-            type: "number",
-          },
-          title: {
-            displayName: "Title",
-            type: "string",
-          },
-          completed: {
-            displayName: "Completed",
-            type: "boolean",
-          },
+          to: { displayName: "To", type: "string" },
+          from: { displayName: "From", type: "string" },
+          subject: { displayName: "Subject", type: "string" },
+          text: { displayName: "Text Body", type: "string" },
+          html: { displayName: "HTML Body", type: "string" },
+          messageId: { displayName: "Message ID", type: "string" },
+          status: { displayName: "Status", type: "string" },
         },
         methods: {
-          get: {
-            displayName: "Get TODO",
-            type: "read",
-            inputs: ["id"],
-            outputs: ["id", "userId", "title", "completed"],
-          },
-          getParams: {
-            displayName: "Get TODO",
-            type: "read",
-            parameters: {
-              pid: {
-                displayName: "param1",
-                description: "Description Of Param 1",
-                type: "number",
-              },
-            },
-            requiredParameters: ["pid"],
-            outputs: ["id"],
-          },
-        },
-      },
-    },
+          send: {
+            displayName: "Send Email",
+            type: "create",
+            inputs: ["to", "from", "subject", "text", "html"],
+            outputs: ["messageId", "status"]
+          }
+        }
+      }
+    }
   });
 };
 
 onexecute = async function ({
   objectName,
   methodName,
-  parameters,
   properties,
-  configuration,
-  schema,
-}): Promise<void> {
+  parameters,
+  configuration
+}) {
   switch (objectName) {
-    case "todo":
-      await onexecuteTodo(methodName, properties, parameters);
+    case "email":
+      await onexecuteEmail(methodName, properties, configuration);
       break;
     default:
-      throw new Error("The object " + objectName + " is not supported.");
+      throw new Error("Object '" + objectName + "' not supported.");
   }
 };
 
-async function onexecuteTodo(
+async function onexecuteEmail(
   methodName: string,
   properties: SingleRecord,
-  parameters: SingleRecord
+  configuration: SingleRecord
 ): Promise<void> {
   switch (methodName) {
-    case "get":
-      await onexecuteTodoGet(properties);
-      break;
-    case "getParams":
-      await onexecuteTodoGetWithParams(parameters);
+    case "send":
+      await onexecuteEmailSend(properties, configuration);
       break;
     default:
-      throw new Error("The method " + methodName + " is not supported.");
+      throw new Error("Method '" + methodName + "' is not supported.");
   }
 }
 
-function onexecuteTodoGet(properties: SingleRecord): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    var xhr = new XMLHttpRequest();
-    xhr.onreadystatechange = function () {
-      try {
-        if (xhr.readyState !== 4) return;
-        if (xhr.status !== 200)
-          throw new Error("Failed with status " + xhr.status);
+async function onexecuteEmailSend(
+  properties: SingleRecord,
+  configuration: SingleRecord
+): Promise<void> {
+  // Set the SendGrid API key
+  sgMail.setApiKey(String(configuration.apiKey));
 
-        var obj = JSON.parse(xhr.responseText);
-        postResult({
-          id: obj.id,
-          userId: obj.userId,
-          title: obj.title,
-          completed: obj.completed,
-        });
-        resolve();
-      } catch (e) {
-        reject(e);
-      }
-    };
+  // Prepare the message
+  const msg: any = {
+    to: properties.to,
+    from: properties.from,
+    subject: properties.subject,
+    text: properties.text,
+    html: properties.html,
+    // Optionally, you can add more fields here
+  };
 
-    if (typeof properties["id"] !== "number")
-      throw new Error('properties["id"] is not of type number');
-    xhr.open(
-      "GET",
-      "https://jsonplaceholder.typicode.com/todos/" +
-        encodeURIComponent(properties["id"])
-    );
-    xhr.setRequestHeader("test", "test value");
-    xhr.send();
-  });
-}
+  try {
+    // Send the email
+    const [response] = await sgMail.send(msg);
 
-function onexecuteTodoGetWithParams(parameters: SingleRecord): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    try {
-      postResult({
-        id: parameters["pid"],
-      });
-      resolve();
-    } catch (e) {
-      reject(e);
+    // SendGrid doesn't return a messageId in the response directly, but you can grab from headers if needed
+    let messageId = "";
+    if (response && response.headers && response.headers["x-message-id"]) {
+      messageId = response.headers["x-message-id"];
     }
-  });
+
+    postResult({
+      messageId: messageId,
+      status: response.statusCode ? String(response.statusCode) : "sent"
+    });
+  } catch (err: any) {
+    throw new Error("SendGrid send failed: " + (err.message || err.toString()));
+  }
 }
